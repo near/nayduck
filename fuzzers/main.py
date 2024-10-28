@@ -504,23 +504,42 @@ On host: {socket.gethostname()}
         # Spin up the fuzzer process itself
         # libfuzzer will kill the process if it takes more than -timeout number of seconds.
         # nayduck can sigstop the fuzzing process for ~2 hours at most, so 8000s should be ok.
-        self.proc = subprocess.Popen(  # pylint: disable=consider-using-with
-            [
-                'cargo',
-                'fuzz',
-                'run',
-                self.target['runner'],
-                '--',
-                str(corpus.corpus_for(self.target)),
-                str(corpus.artifacts_for(self.target)),
-                f'-artifact_prefix={corpus.artifacts_for(self.target)}/',
-                '-timeout=8000',
-            ] + self.target['flags'],
-            cwd=self.repo_dir / self.target['crate'],
-            start_new_session=True,
-            stdout=self.log_file,
-            stderr=subprocess.STDOUT,
-        )
+        flags = ['-timeout=8000'] + self.target['flags']
+        if self.target.get('type') == 'bolero':
+            self.proc = subprocess.Popen(
+                [
+                    'cargo',
+                    'bolero',
+                    'test',
+                    '--fake-nightly-toolchain',
+                    f'--corpus-dir={corpus.corpus_for(self.target)}',
+                    f'--crashes-dir={corpus.artifacts_for(self.target)}',
+                    '-p',
+                    self.target['crate'],
+                    self.target['runner'],
+                ] + [f'--engine-args="{flag}"' for flag in flags],
+                cwd = self.repo_dir,
+                start_new_session = True,
+                stdout = self.log_file,
+                stderr = subprocess.STDOUT,
+            )
+        else:
+            self.proc = subprocess.Popen(  # pylint: disable=consider-using-with
+                [
+                    'cargo',
+                    'fuzz',
+                    'run',
+                    self.target['runner'],
+                    '--',
+                    str(corpus.corpus_for(self.target)),
+                    str(corpus.artifacts_for(self.target)),
+                    f'-artifact_prefix={corpus.artifacts_for(self.target)}/',
+                ] + flags,
+                cwd=self.repo_dir / self.target['crate'],
+                start_new_session=True,
+                stdout=self.log_file,
+                stderr=subprocess.STDOUT,
+            )
 
     def check_if_crashed(self) -> bool:
         """Checks if the current process has crashed. Returns True if it stopped.
